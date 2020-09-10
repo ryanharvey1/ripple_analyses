@@ -464,7 +464,7 @@ df_sessions = pd.read_csv('D:/ryanh/github\harvey_et_al_2020/Rdata_pae_track_cyl
 sessions = pd.unique(df_sessions.session)
 sessions = data_path+sessions
 
-parallel = 0
+parallel = 1
 # sessions.reverse()
 
 if parallel==1:
