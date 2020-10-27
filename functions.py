@@ -181,7 +181,8 @@ def get_place_fields(ratemap,min_peak_rate=2,min_field_width=2,max_field_width=3
                         
     # add to data frames
     fields = pd.DataFrame(fields, columns=("start", "stop", "width", "peakFR", "peakLoc", "COM"))  
-    
+    return fields
+
 def get_place_cell_idx(session):
     """
     find cells to include. At least 1 field from both directions
