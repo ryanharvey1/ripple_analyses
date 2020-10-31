@@ -1,1 +1,1 @@
-# testing ripple detection [WIP]
+# A collection of analyses to investigate HPC ripples and replay
