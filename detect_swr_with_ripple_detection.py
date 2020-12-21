@@ -7,7 +7,7 @@ Created on Thu Aug 13 18:42:19 2020
 # data managment and math functions
 import pandas as pd
 import numpy as np
-
+import math
 
 import neuroseries as nts
 
@@ -241,9 +241,9 @@ def get_ripple_maps(ripple_times,ts,lfp,filtered_lfps,phase,amp,freq,fs):
     return ripple_maps
 
 def emg_filter(session,ripple_times,shank,emg_thres=0.85):
-    parts = session.split('\\')
+    parts = session.split('/')
     f = h5py.File(os.path.join(parts[0],parts[1],parts[2]) + '/EMG_from_LFP/' +
-                  session.split('\\')[-1].split('.mat')[0] + '_emg.mat','r')
+                  session.split('/')[-1].split('.mat')[0] + '_emg.mat','r')
     emg = f['data'][0]
     emg_ts = f['timestamps'][0]
     max_emg=[]
@@ -363,7 +363,61 @@ def get_good_channels(shank):
             good_ch.append(an_array[i][x])
         
     return good_ch
+
+def makegausslpfir(Fc=100, Fs=1250, s=4):
+    # % makegausslpfir        Gaussian LP filter
+    # %
+    # % win = makegausslpfir( Fc, Fs, s )
+    # %
+    # % Fc    corner frequency [Hz]
+    # % Fs    sampling frequency [Hz]
+    # % s     support [SD], minimum 3, default 4
+    # %
+    # % win   fir
+    # %
+    # % see also  firfilter
+
+    # % 02-oct-13 ES
+    # 20-dec-20 RH to python
     
+    s = max( s, 3 )
+
+    sd = Fs / ( 2 * np.pi * Fc )
+    x = np.arange(-math.ceil( s * sd ), math.ceil( s * sd ))
+    gwin = 1/( 2 * np.pi * sd ) * np.exp( -( x**2/2/sd**2 ) )
+    gwin = gwin / sum( gwin )
+
+    return gwin
+
+def firfilt(x,W):
+    from scipy import signal
+
+    # % FIRFILT       FIR filtering with zero phase distortion.
+    # %
+    # %               matrix columns are filtered;
+    # %               output is a column vector / matrix.
+
+    # % 19-Jul-02 ES
+    # % 27-jan-03 zero phase lag
+    # 20-dec-20 RH to python
+    
+    C = len(W)
+    D = math.ceil(C/2) - 1
+
+    x = np.concatenate((np.flipud(x[0:C]),x,np.flipud(x[len(x)-C-1:-1])))
+    Y = signal.lfilter(W,1,x)
+    Y = Y[C+D:len(Y)-C+D]
+
+    return Y
+
+def bandpass_filter(signal,rip_bp=[80,250],fs=1250):
+    # filter and process ripples, using Eran's defaults (diff of Gaussians)
+    hRip1 = makegausslpfir(rip_bp[0], fs, 6 )
+    hRip2 = makegausslpfir(rip_bp[1], fs, 6 )
+    high = firfilt( signal, hRip2 )   # highpass filter
+    lo = firfilt( high, hRip1 )   # lowpass filter         
+    return high - lo # difference of Gaussians
+
 def run_all(session):
     
     # get data session path from mat file
@@ -379,7 +433,6 @@ def run_all(session):
     good_ch = get_good_channels(shank)
     
     # load .lfp
-    # lfp, ts = load_lfp(glob.glob(path +'\*.lfp')[0],channels,fs)
     lfp,ts = loadLFP(glob.glob(path +'\*.lfp')[0], n_channels=channels,
                      channel=good_ch, frequency=fs,
                      precision='int16')
@@ -388,23 +441,22 @@ def run_all(session):
     speed = np.interp(ts,df.ts,df.speed)
     speed[np.isnan(speed)] = 0
     
+    # get filtered signal
+    print('filtering signal')
+    LFPs = lfp
+    filtered_lfps = np.stack([bandpass_filter(lfp) for lfp in LFPs.T])
+    filtered_lfps = filtered_lfps.T
+    
     # detect ripples
     print('detecting ripples')
-    ripple_times = Karlsson_ripple_detector(ts, lfp, speed, fs)
+    ripple_times = Karlsson_ripple_detector(ts, filtered_lfps, speed, fs)
     
-    # restrict ripples to < 200 ms
+    # find ripple duration
     ripple_times['ripple_duration'] = ripple_times.end_time - ripple_times.start_time
-    ripple_times = ripple_times[ripple_times.ripple_duration < 0.200]
         
     # check against emg (< 0.85)
     ripple_times = emg_filter(session,ripple_times,shank)
         
-    # get filtered signal
-    print('filtering signal')
-    LFPs = lfp
-    filtered_lfps = np.stack([filter_ripple_band(lfp, fs) for lfp in LFPs.T])
-    filtered_lfps = filtered_lfps.T
-    
     # add ripple channel and peak amp
     print('getting ripple channel')
     ripple_times = get_ripple_channel(ripple_times,
@@ -424,13 +476,13 @@ def run_all(session):
     ripple_times['peak_freq'] = [map[len(map)//2] for map in ripple_maps['freq_map']]
     
     # filter out cliped signal
-    ripple_times,ripple_maps = clip_filter(ripple_times,ripple_maps)
+    #ripple_times,ripple_maps = clip_filter(ripple_times,ripple_maps)
     
     # filter out very high amplitude ripples
-    ripple_times,ripple_maps = filter_high_amp(ripple_times,ripple_maps)
+    #ripple_times,ripple_maps = filter_high_amp(ripple_times,ripple_maps)
 
     # find ripples with a single large jump
-    ripple_times,ripple_maps = filter_single_peaks(ripple_times,ripple_maps)
+    #ripple_times,ripple_maps = filter_single_peaks(ripple_times,ripple_maps)
 
     # save ripples for neuroscope inspection
     save_ripples(ripple_times,path)
@@ -456,19 +508,19 @@ def main_loop(session,data_path,save_path):
         pickle.dump(ripple_maps, f)
 
 
-data_path = 'F:\\Projects\\PAE_PlaceCell\\ProcessedData\\'
-save_path = "F:\\Projects\\PAE_PlaceCell\\swr_data\\"
+data_path = 'F:/Projects/PAE_PlaceCell/ProcessedData/'
+save_path = "F:/Projects/PAE_PlaceCell/analysis/swr_data/"
 
 # find HPC sessions
-df_sessions = pd.read_csv('D:/ryanh/github\harvey_et_al_2020/Rdata_pae_track_cylinder_all_cells.csv')
+df_sessions = pd.read_csv('D:/ryanh/github/harvey_et_al_2020/Rdata_pae_track_cylinder_all_cells.csv')
 sessions = pd.unique(df_sessions.session)
 sessions = data_path+sessions
 
 parallel = 1
-# sessions.reverse()
+#sessions.reverse()
 
 if parallel==1:
-    num_cores = multiprocessing.cpu_count()                             
+    num_cores = multiprocessing.cpu_count()  
     processed_list = Parallel(n_jobs=num_cores)(delayed(main_loop)(session,data_path,save_path) for session in sessions)
 else:
     for session in sessions:
