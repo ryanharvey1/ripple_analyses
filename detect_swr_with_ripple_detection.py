@@ -33,8 +33,10 @@ from joblib import Parallel, delayed
 
 # ripple detector
 from ripple_detection import Karlsson_ripple_detector, filter_ripple_band
-
 from ripple_detection.core import gaussian_smooth, get_envelope
+
+# for signal filtering
+from neurodsp.filt import filter_signal
 
 
 def loadXML(path):
@@ -444,7 +446,8 @@ def run_all(session):
     # get filtered signal
     print('filtering signal')
     LFPs = lfp
-    filtered_lfps = np.stack([bandpass_filter(lfp) for lfp in LFPs.T])
+    # filtered_lfps = np.stack([bandpass_filter(lfp) for lfp in LFPs.T])
+    filtered_lfps = np.stack([filter_signal(lfp,fs,'bandpass',(80,250),remove_edges=False) for lfp in LFPs.T])
     filtered_lfps = filtered_lfps.T
     
     # detect ripples
@@ -476,7 +479,7 @@ def run_all(session):
     ripple_times['peak_freq'] = [map[len(map)//2] for map in ripple_maps['freq_map']]
     
     # filter out cliped signal
-    #ripple_times,ripple_maps = clip_filter(ripple_times,ripple_maps)
+    ripple_times,ripple_maps = clip_filter(ripple_times,ripple_maps)
     
     # filter out very high amplitude ripples
     #ripple_times,ripple_maps = filter_high_amp(ripple_times,ripple_maps)
