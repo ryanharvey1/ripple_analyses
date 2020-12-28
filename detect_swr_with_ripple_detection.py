@@ -445,12 +445,11 @@ def run_all(session):
     
     # get filtered signal
     print('filtering signal')
-    LFPs = lfp
-    # filtered_lfps = np.stack([bandpass_filter(lfp) for lfp in LFPs.T])
-    filtered_lfps = np.stack([filter_signal(lfp,fs,'bandpass',(80,250),remove_edges=False) for lfp in LFPs.T])
+    filtered_lfps = np.stack([filter_signal(lfp_,fs,'bandpass',(80,250),remove_edges=False) for lfp_ in lfp.T])
     filtered_lfps = filtered_lfps.T
-    
+        
     # detect ripples
+    
     print('detecting ripples')
     ripple_times = Karlsson_ripple_detector(ts, filtered_lfps, speed, fs)
     
