@@ -38,86 +38,10 @@ from ripple_detection.core import gaussian_smooth, get_envelope
 # for signal filtering
 from neurodsp.filt import filter_signal
 
+sys.path.append("D:/ryanh/github/ripple_analyses")
+from functions import *
 
-def loadXML(path):
-    """
-    path should be the folder session containing the XML file
-    Function returns :
-        1. the number of channels
-        2. the sampling frequency of the dat file or the eeg file depending of what is present in the folder
-            eeg file first if both are present or both are absent
-        3. the mappings shanks to channels as a dict
-    Args:
-        path : string
-    Returns:
-        int, int, dict
-    """
-    if not os.path.exists(path):
-        print("The path "+path+" doesn't exist; Exiting ...")
-        sys.exit()
-    listdir = os.listdir(path)
-    xmlfiles = [f for f in listdir if f.endswith('.xml')]
-    if not len(xmlfiles):
-        print("Folder contains no xml files; Exiting ...")
-        sys.exit()
-    new_path = os.path.join(path, xmlfiles[0])
 
-    from xml.dom import minidom
-    xmldoc = minidom.parse(new_path)
-    nChannels = xmldoc.getElementsByTagName('acquisitionSystem')[0].getElementsByTagName('nChannels')[0].firstChild.data
-    fs_dat = xmldoc.getElementsByTagName('acquisitionSystem')[0].getElementsByTagName('samplingRate')[0].firstChild.data
-    fs = xmldoc.getElementsByTagName('fieldPotentials')[0].getElementsByTagName('lfpSamplingRate')[0].firstChild.data
-
-    shank_to_channel = {}
-    groups = xmldoc.getElementsByTagName('anatomicalDescription')[0].getElementsByTagName('channelGroups')[0].getElementsByTagName('group')
-    for i in range(len(groups)):
-        shank_to_channel[i] = np.sort([int(child.firstChild.data) for child in groups[i].getElementsByTagName('channel')])
-    return int(nChannels), int(fs), shank_to_channel
-
-def loadLFP(path, n_channels=90, channel=64, frequency=1250.0, precision='int16'):
-    if type(channel) is not list:
-        f = open(path, 'rb')
-        startoffile = f.seek(0, 0)
-        endoffile = f.seek(0, 2)
-        bytes_size = 2
-        n_samples = int((endoffile-startoffile)/n_channels/bytes_size)
-        duration = n_samples/frequency
-        interval = 1/frequency
-        f.close()
-        with open(path, 'rb') as f:
-            data = np.fromfile(f, np.int16).reshape((n_samples, n_channels))[:,channel]
-            timestep = np.arange(0, len(data))/frequency
-            return data, timestep # nts.Tsd(timestep, data, time_units = 's')
-        
-    elif type(channel) is list:
-        f = open(path, 'rb')
-        startoffile = f.seek(0, 0)
-        endoffile = f.seek(0, 2)
-        bytes_size = 2
-
-        n_samples = int((endoffile-startoffile)/n_channels/bytes_size)
-        duration = n_samples/frequency
-        f.close()
-        with open(path, 'rb') as f:
-            data = np.fromfile(f, np.int16).reshape((n_samples, n_channels))[:,channel]
-            timestep = np.arange(0, len(data))/frequency
-            return data,timestep # nts.TsdFrame(timestep, data, time_units = 's')
-        
-def load_lfp(file,channels,fs):
-    LFP = []
-    for i in range(channels):
-        lfp = loadLFP(file, n_channels=channels, channel=i, frequency=fs)
-        LFP.append(lfp)
-
-    lfp = np.vstack(LFP)  
-    ts = np.arange(0, lfp.shape[1])/fs
-    return lfp.T, ts
-
-def load_position(session):
-    f = h5py.File(session,'r')
-    # load frames [ts x y a s] 
-    frames = np.transpose(np.array(f['frames']))
-    return pd.DataFrame(frames,columns=['ts', 'x', 'y', 'hd', 'speed'])    
 
 def get_ripple_channel(ripple_times,filtered_lfps,ts,fs):
     channel = []
@@ -187,9 +111,6 @@ def get_ripple_freq_peaks_method(ripple_times,filtered_lfps,ts,fs,peak_dist=0.00
     ripple_times['peak_freq'] = fqcy
     return ripple_times
     
-def get_session_path(session):
-    f = h5py.File(session,'r')
-    return f['session_path'][()].tobytes()[::2].decode()
 
 def get_ripple_maps(ripple_times,ts,lfp,filtered_lfps,phase,amp,freq,fs):
     
@@ -277,14 +198,6 @@ def make_Epochs(start, end):
         print(nts_array)
         return nts_array
     
-def writeNeuroscopeEvents(path, ep, name):
-    f = open(path, 'w')
-    for i in range(len(ep)):
-        f.writelines(str(ep.as_units('ms').iloc[i]['start']) + " "+name+" start "+ str(1)+"\n")
-        #f.writelines(str(ep.as_units('ms').iloc[i]['peak']) + " "+name+" start "+ str(1)+"\n")
-        f.writelines(str(ep.as_units('ms').iloc[i]['end']) + " "+name+" end "+ str(1)+"\n")
-    f.close()
-    return
 
 def save_ripples(ripple_times,path):
     rpt_ep = nts.IntervalSet(np.array(ripple_times.start_time),
@@ -366,59 +279,6 @@ def get_good_channels(shank):
         
     return good_ch
 
-def makegausslpfir(Fc=100, Fs=1250, s=4):
-    # % makegausslpfir        Gaussian LP filter
-    # %
-    # % win = makegausslpfir( Fc, Fs, s )
-    # %
-    # % Fc    corner frequency [Hz]
-    # % Fs    sampling frequency [Hz]
-    # % s     support [SD], minimum 3, default 4
-    # %
-    # % win   fir
-    # %
-    # % see also  firfilter
-
-    # % 02-oct-13 ES
-    # 20-dec-20 RH to python
-    
-    s = max( s, 3 )
-
-    sd = Fs / ( 2 * np.pi * Fc )
-    x = np.arange(-math.ceil( s * sd ), math.ceil( s * sd ))
-    gwin = 1/( 2 * np.pi * sd ) * np.exp( -( x**2/2/sd**2 ) )
-    gwin = gwin / sum( gwin )
-
-    return gwin
-
-def firfilt(x,W):
-    from scipy import signal
-
-    # % FIRFILT       FIR filtering with zero phase distortion.
-    # %
-    # %               matrix columns are filtered;
-    # %               output is a column vector / matrix.
-
-    # % 19-Jul-02 ES
-    # % 27-jan-03 zero phase lag
-    # 20-dec-20 RH to python
-    
-    C = len(W)
-    D = math.ceil(C/2) - 1
-
-    x = np.concatenate((np.flipud(x[0:C]),x,np.flipud(x[len(x)-C-1:-1])))
-    Y = signal.lfilter(W,1,x)
-    Y = Y[C+D:len(Y)-C+D]
-
-    return Y
-
-def bandpass_filter(signal,rip_bp=[80,250],fs=1250):
-    # filter and process ripples, using Eran's defaults (diff of Gaussians)
-    hRip1 = makegausslpfir(rip_bp[0], fs, 6 )
-    hRip2 = makegausslpfir(rip_bp[1], fs, 6 )
-    high = firfilt( signal, hRip2 )   # highpass filter
-    lo = firfilt( high, hRip1 )   # lowpass filter         
-    return high - lo # difference of Gaussians
 
 def run_all(session):
     
