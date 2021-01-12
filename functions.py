@@ -4,6 +4,7 @@ import hdf5storage
 import h5py
 from scipy.signal import find_peaks
 import os
+import sys
 
 def set_size(width, fraction=1, subplots=(1, 1)):
     """Set figure dimensions to avoid scaling in LaTeX.
@@ -92,6 +93,11 @@ def loadLFP(path, n_channels=90, channel=64, frequency=1250.0, precision='int16'
         with open(path, 'rb') as f:
             data = np.fromfile(f, np.int16).reshape((n_samples, n_channels))[:,channel]
             timestep = np.arange(0, len(data))/frequency
+            # check if lfp time stamps exist
+            lfp_ts_path = os.path.join(os.path.dirname(os.path.abspath(path)),'lfp_ts.npy')
+            if os.path.exists(lfp_ts_path):
+                timestep = np.load(lfp_ts_path).reshape(-1)
+
             return data, timestep # nts.Tsd(timestep, data, time_units = 's')
         
     elif type(channel) is list:
@@ -106,6 +112,10 @@ def loadLFP(path, n_channels=90, channel=64, frequency=1250.0, precision='int16'
         with open(path, 'rb') as f:
             data = np.fromfile(f, np.int16).reshape((n_samples, n_channels))[:,channel]
             timestep = np.arange(0, len(data))/frequency
+            # check if lfp time stamps exist
+            lfp_ts_path = os.path.join(os.path.dirname(os.path.abspath(path)),'lfp_ts.npy')
+            if os.path.exists(lfp_ts_path):
+                timestep = np.load(lfp_ts_path).reshape(-1)
             return data,timestep # nts.TsdFrame(timestep, data, time_units = 's')
         
 def get_session_path(session):
