@@ -220,4 +220,3 @@ dependencies:
     - tqdm==4.60.0
     - widgetsnbextension==3.5.1
 prefix: D:\ryanh\Anaconda3\envs\ripple_analysis
-
